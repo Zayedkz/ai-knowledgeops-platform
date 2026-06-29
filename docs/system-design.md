@@ -49,11 +49,11 @@ Initial entities:
 Initial endpoints:
 
 - `GET /health`: service health and environment.
+- `POST /documents`: ingest document text, persist chunks, and enqueue embedding jobs.
 - `POST /query`: accepts a question and optional metadata filter, returns answer and citations.
 
 Planned endpoints:
 
-- `POST /documents`: upload or register a document.
 - `GET /documents/{id}`: inspect ingestion state.
 - `POST /evaluations/run`: execute an evaluation set.
 
@@ -79,6 +79,7 @@ Planned endpoints:
 - Store failed job state with error details.
 - Return explicit errors when citations cannot be produced.
 - Avoid generating unsupported answers when retrieval confidence is low.
+- Make ingestion idempotent with `(source, content_hash)` uniqueness.
 
 ## 9. Observability
 
@@ -108,4 +109,3 @@ Planned endpoints:
 - Document upload workflow.
 - Web UI.
 - CI integration tests with service containers.
-

@@ -32,6 +32,8 @@ flowchart LR
 - FastAPI backend skeleton with health checks
 - Environment-based configuration with safe local defaults
 - Document chunking service with unit tests
+- Document ingestion persistence with idempotent content hashing
+- SQLAlchemy models and Alembic migrations for documents, chunks, and embedding jobs
 - Retrieval and answer response contracts
 - Docker Compose for PostgreSQL/pgvector and Redis
 - GitHub Actions CI for linting and tests
@@ -42,6 +44,8 @@ flowchart LR
 - Python 3.12
 - FastAPI
 - Pydantic Settings
+- SQLAlchemy
+- Alembic
 - PostgreSQL with pgvector
 - Redis
 - pytest
@@ -107,6 +111,27 @@ curl -X POST http://localhost:8000/query \
   -d '{"question":"What does this platform do?","metadata_filter":{"source":"sample"}}'
 ```
 
+```bash
+curl -X POST http://localhost:8000/documents \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "sample/platform-overview.md",
+    "title": "Platform Overview",
+    "text": "AI KnowledgeOps indexes internal documents for retrieval.",
+    "metadata": {"team": "ai-platform"}
+  }'
+```
+
+## Database Migrations
+
+Run migrations after PostgreSQL is available:
+
+```bash
+alembic upgrade head
+```
+
+The test suite uses SQLite to validate ingestion behavior without Docker. PostgreSQL/pgvector integration tests will be added once a Docker-capable or external Postgres environment is available.
+
 ## Testing
 
 ```bash
@@ -144,4 +169,3 @@ ruff check .
 - Frontend document browser and query UI
 - OpenTelemetry exporter configuration
 - Integration tests against PostgreSQL and Redis
-
