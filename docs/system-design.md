@@ -42,6 +42,7 @@ Initial entities:
 
 - `documents`: source ID, title, content hash, metadata, timestamps.
 - `document_chunks`: document ID, chunk index, text, token estimate, metadata, embedding.
+- `embedding_jobs`: document ID, chunk ID, status, attempt count, last error, timestamps.
 - `query_events`: question, retrieval parameters, latency, selected chunk IDs, timestamps.
 
 ## 5. API Design
@@ -75,8 +76,8 @@ Planned endpoints:
 ## 8. Failure Handling
 
 - Validate documents before queueing.
-- Retry transient provider failures.
-- Store failed job state with error details.
+- Retry transient provider failures through bounded worker reruns.
+- Store failed embedding job state with attempt counts and error details.
 - Return explicit errors when citations cannot be produced.
 - Avoid generating unsupported answers when retrieval confidence is low.
 - Make ingestion idempotent with `(source, content_hash)` uniqueness.
@@ -99,12 +100,13 @@ Planned endpoints:
 
 - PostgreSQL with pgvector keeps the local system simple and portfolio-friendly, but a dedicated vector database may be useful at very high scale.
 - Mock providers make testing reliable without paid APIs, but production value requires real provider adapters.
+- The first worker polls pending rows directly, which is simple and testable; a production queue should move claim/lease semantics into Redis or the database.
 - Docker Compose is enough for local development, while production should use managed database, cache, and secret services.
 
 ## 12. Future Improvements
 
-- Alembic migrations.
 - Real embeddings and model adapters.
+- Redis-backed embedding queue with leases, backoff, and dead-letter handling.
 - RAG quality evaluation script.
 - Document upload workflow.
 - Web UI.
