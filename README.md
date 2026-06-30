@@ -34,6 +34,8 @@ flowchart LR
 - Document chunking service with unit tests
 - Document ingestion persistence with idempotent content hashing
 - SQLAlchemy models and Alembic migrations for documents, chunks, and embedding jobs
+- Deterministic local embedding provider for offline development and tests
+- CLI embedding job processor with retry, failure, and idempotent rerun behavior
 - Retrieval and answer response contracts
 - Docker Compose for PostgreSQL/pgvector and Redis
 - GitHub Actions CI for linting and tests
@@ -132,6 +134,18 @@ alembic upgrade head
 
 The test suite uses SQLite to validate ingestion behavior without Docker. PostgreSQL/pgvector integration tests will be added once a Docker-capable or external Postgres environment is available.
 
+## Embedding Jobs
+
+Document ingestion creates pending embedding jobs for each persisted chunk. The local default embedding provider is deterministic and does not call paid APIs, which keeps development and CI repeatable.
+
+Process a bounded batch of pending jobs:
+
+```bash
+python -m app.jobs.process_embeddings --limit 10
+```
+
+The worker stores vectors on `document_chunks.embedding`, marks successful jobs `completed`, records provider errors on failed attempts, and marks jobs `failed` once `--max-attempts` is reached. Completed jobs are skipped on reruns, and failed jobs can be reset by worker code for an explicit retry path.
+
 ## Testing
 
 ```bash
@@ -150,7 +164,7 @@ ruff check .
 ## Reliability Considerations
 
 - Ingestion should be idempotent by document checksum and source ID.
-- Failed embedding jobs should retry with exponential backoff.
+- Failed embedding jobs track attempts and terminal failure state; future queue backends should add exponential backoff.
 - Query responses should include citation metadata for auditability.
 - Provider failures should degrade to clear errors rather than uncited answers.
 
@@ -164,7 +178,8 @@ ruff check .
 ## Future Improvements
 
 - Database migrations with Alembic
-- Real embedding provider implementation
+- Real embedding provider adapter behind the existing provider interface
+- Redis-backed worker queue and dead-letter handling
 - RAG evaluation runner and sample benchmark set
 - Frontend document browser and query UI
 - OpenTelemetry exporter configuration
