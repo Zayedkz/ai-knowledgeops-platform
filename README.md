@@ -1,45 +1,63 @@
 # AI KnowledgeOps Platform
 
-AI KnowledgeOps Platform is a production-style retrieval-augmented generation system for ingesting internal documents, indexing searchable chunks, and answering questions with citations.
+Production-style retrieval platform for internal knowledge bases. It ingests documents, chunks and indexes content, processes embedding jobs with worker leases, and answers retrieval queries with grounded citations.
 
-The project is intentionally designed like an engineering portfolio piece: clear architecture, local infrastructure, tests, observability hooks, and room for realistic scaling work.
+This project is built as an engineering portfolio piece for AI platform, developer productivity, and enterprise application roles. It emphasizes clear service boundaries, deterministic local development, CI-friendly tests, and production-minded tradeoffs rather than a thin LLM wrapper.
 
-## Problem Statement
+## Why This Exists
 
-Engineering and operations teams often store critical knowledge across PDFs, Markdown files, runbooks, tickets, and internal docs. Search alone does not answer operational questions well, while naive LLM chat over documents tends to lack traceability. This platform demonstrates how to build a reliable RAG service with ingestion, retrieval, citations, evaluation, and production-minded boundaries.
+Engineering and operations teams often spread critical knowledge across runbooks, PDFs, Markdown files, tickets, SharePoint pages, and internal tools. Plain search returns documents, while naive chat over documents can produce unsupported answers. This platform demonstrates the core backend patterns behind a reliable RAG system:
+
+- idempotent document ingestion
+- durable chunk and metadata storage
+- background embedding jobs
+- retryable worker processing
+- metadata-filtered retrieval
+- citation-first responses
+- testable provider abstractions
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    User[User or API Client] --> API[FastAPI API]
-    API --> RateLimit[Rate Limiting]
-    API --> Query[Query Service]
-    API --> Ingest[Document Ingestion API]
-    Ingest --> Queue[Redis Job Queue]
-    Queue --> Worker[Embedding Worker]
-    Worker --> Embed[Embedding Provider]
-    Worker --> DB[(PostgreSQL + pgvector)]
-    Query --> Cache[Redis Cache]
-    Query --> DB
-    Query --> LLM[LLM Provider]
-    Query --> Citations[Citation Formatter]
-    API --> OTel[OpenTelemetry Logs and Traces]
+    Client[API Client] --> API[FastAPI Service]
+    API --> Documents[Document Ingestion API]
+    API --> Query[Query API]
+    Documents --> Chunker[Chunking Service]
+    Chunker --> DB[(PostgreSQL / SQLite Tests)]
+    Documents --> Jobs[Embedding Jobs]
+    Jobs --> Worker[Embedding Worker]
+    Worker --> Provider[Embedding Provider]
+    Worker --> DB
+    Query --> Provider
+    Query --> Retriever[Cosine Retriever]
+    Retriever --> DB
+    Retriever --> Citations[Citation Response]
 ```
+
+The local/test path uses deterministic embeddings and SQLite-compatible JSON vectors so the full ingestion and retrieval workflow can run without paid APIs. PostgreSQL with pgvector is the intended production storage path and is included in Docker Compose.
+
+## What Reviewers Should Notice
+
+- FastAPI app with explicit request/response contracts.
+- SQLAlchemy domain models for documents, chunks, and embedding jobs.
+- Alembic migrations for schema evolution.
+- Idempotent ingestion based on source and content hash.
+- Chunk-level embedding jobs with status, attempts, errors, lock owner, and lock timestamp.
+- Worker lease recovery for stale `in_progress` jobs.
+- Deterministic embedding provider for reliable local tests and CI.
+- Metadata-filtered retrieval with citation objects instead of unsupported generated prose.
+- Focused pytest coverage for ingestion, chunking, worker behavior, retrieval, and API contracts.
+- GitHub Actions workflow for automated quality checks.
 
 ## Features
 
-- FastAPI backend skeleton with health checks
-- Environment-based configuration with safe local defaults
-- Document chunking service with unit tests
-- Document ingestion persistence with idempotent content hashing
-- SQLAlchemy models and Alembic migrations for documents, chunks, and embedding jobs
-- Deterministic local embedding provider for offline development and tests
-- CLI embedding job processor with leases, retry, failure, and idempotent rerun behavior
-- Deterministic embedding retrieval with metadata filtering and citations
-- Docker Compose for PostgreSQL/pgvector and Redis
-- GitHub Actions CI for linting and tests
-- System design documentation with scaling, reliability, and security notes
+- `POST /documents` ingests text, persists chunks, and creates embedding jobs.
+- `python -m app.jobs.process_embeddings` processes a bounded batch of pending jobs.
+- `POST /query` embeds a question, applies optional exact-match metadata filters, scores chunks, and returns citations.
+- `GET /health` exposes basic service health and environment information.
+- Docker Compose provides PostgreSQL/pgvector and Redis for local infrastructure.
+- Structured project documentation captures scaling, reliability, security, and tradeoffs.
 
 ## Tech Stack
 
@@ -49,11 +67,26 @@ flowchart LR
 - SQLAlchemy
 - Alembic
 - PostgreSQL with pgvector
-- Redis
+- SQLite for deterministic tests
 - pytest
 - Ruff
 - Docker Compose
 - GitHub Actions
+
+## Repository Tour
+
+```text
+app/api/             FastAPI routers for health, document ingestion, and querying
+app/db/              SQLAlchemy models, sessions, and persistence setup
+app/ingestion/       Chunking and idempotent document ingestion services
+app/embeddings/      Provider interface and deterministic local embedding provider
+app/jobs/            Embedding job processor and CLI entrypoint
+app/retrieval/       Retrieval models and cosine scoring service
+alembic/             Database migrations
+docs/                System design and production tradeoffs
+sample_docs/         Small sample corpus for local experimentation
+tests/               Unit and API tests
+```
 
 ## Local Setup
 
@@ -71,13 +104,19 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Start local infrastructure once Docker is installed:
+Start local infrastructure once Docker is available:
 
 ```bash
 docker compose up -d
 ```
 
-Run the API:
+Run migrations:
+
+```bash
+alembic upgrade head
+```
+
+Start the API:
 
 ```bash
 uvicorn app.main:app --reload
@@ -89,29 +128,9 @@ Health check:
 curl http://localhost:8000/health
 ```
 
-## Environment Variables
+## Demo Flow
 
-| Variable | Purpose | Example |
-| --- | --- | --- |
-| `APP_ENV` | Runtime environment label | `local` |
-| `LOG_LEVEL` | Logging verbosity | `INFO` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql+psycopg://...` |
-| `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
-| `LLM_PROVIDER` | LLM provider selector | `mock` |
-| `EMBEDDING_PROVIDER` | Embedding provider selector | `mock` |
-| `RATE_LIMIT_PER_MINUTE` | API rate limit target | `60` |
-
-## API Examples
-
-```bash
-curl http://localhost:8000/health
-```
-
-```bash
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"question":"What does this platform do?","metadata_filter":{"team":"ai-platform"},"limit":5}'
-```
+Ingest a document:
 
 ```bash
 curl -X POST http://localhost:8000/documents \
@@ -119,38 +138,42 @@ curl -X POST http://localhost:8000/documents \
   -d '{
     "source": "sample/platform-overview.md",
     "title": "Platform Overview",
-    "text": "AI KnowledgeOps indexes internal documents for retrieval.",
-    "metadata": {"team": "ai-platform"}
+    "text": "AI KnowledgeOps indexes internal documents for retrieval and citation-backed answers.",
+    "metadata": {"team": "ai-platform", "kind": "overview"}
   }'
 ```
 
-## Database Migrations
-
-Run migrations after PostgreSQL is available:
-
-```bash
-alembic upgrade head
-```
-
-The test suite uses SQLite to validate ingestion behavior without Docker. PostgreSQL/pgvector integration tests will be added once a Docker-capable or external Postgres environment is available.
-
-## Embedding Jobs
-
-Document ingestion creates pending embedding jobs for each persisted chunk. The local default embedding provider is deterministic and does not call paid APIs, which keeps development and CI repeatable.
-
-Process a bounded batch of pending jobs:
+Process embedding jobs:
 
 ```bash
 python -m app.jobs.process_embeddings --limit 10 --worker-id local-worker
 ```
 
-The worker claims pending jobs by marking them `in_progress` with `locked_at` and `locked_by`, stores vectors on `document_chunks.embedding`, marks successful jobs `completed`, records provider errors on failed attempts, and marks jobs `failed` once `--max-attempts` is reached. Fresh in-progress jobs are left alone, stale leases are recovered after `--lease-timeout-seconds`, completed jobs are skipped on reruns, and failed jobs can be reset by worker code for an explicit retry path.
+Query with a metadata filter:
 
-## Query Retrieval
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What does the platform do?",
+    "metadata_filter": {"team": "ai-platform"},
+    "limit": 5
+  }'
+```
 
-`POST /query` embeds the question with the configured embedding provider, scores stored chunk embeddings with cosine similarity, applies optional exact-match metadata filters, and returns the highest-scoring citations. The current response is intentionally retrieval-only: LLM answer synthesis is not connected yet, so the answer text directs callers to the returned citation evidence instead of inventing unsupported prose.
+The current query response is intentionally retrieval-only. It returns grounded citations and a clear message instead of synthesizing an LLM answer before a citation-constrained generation layer is implemented.
 
-The retriever runs in Python over JSON-stored vectors so SQLite tests and offline development remain deterministic. PostgreSQL/pgvector nearest-neighbor indexes are the planned production path once local Docker-based integration tests are available.
+## Environment Variables
+
+| Variable | Purpose | Example |
+| --- | --- | --- |
+| `APP_ENV` | Runtime environment label | `local` |
+| `LOG_LEVEL` | Logging verbosity | `INFO` |
+| `DATABASE_URL` | SQLAlchemy database URL | `postgresql+psycopg://...` |
+| `REDIS_URL` | Redis connection string for future queue/cache work | `redis://localhost:6379/0` |
+| `LLM_PROVIDER` | Reserved LLM provider selector | `mock` |
+| `EMBEDDING_PROVIDER` | Embedding provider selector | `mock` |
+| `RATE_LIMIT_PER_MINUTE` | API rate limit target | `60` |
 
 ## Testing
 
@@ -159,36 +182,24 @@ pytest
 ruff check .
 ```
 
-## Scaling Considerations
+The test suite uses deterministic local providers and SQLite-backed persistence where possible, so core behavior can be validated without Docker or paid model APIs.
 
-- Split ingestion workers from API replicas.
-- Use Redis-backed queues with retries and dead-letter handling.
-- Partition document chunks by tenant or corpus for larger deployments.
-- Add approximate nearest-neighbor indexes through pgvector once data volume warrants it.
-- Cache high-frequency retrieval results with invalidation tied to document versions.
+## Design Notes
 
-## Reliability Considerations
+More detail is available in [docs/system-design.md](docs/system-design.md).
 
-- Ingestion should be idempotent by document checksum and source ID.
-- Embedding jobs use worker leases to avoid duplicate processing and recover stale in-progress claims.
-- Failed embedding jobs track attempts and terminal failure state; future queue backends should add exponential backoff.
-- Query responses include citation metadata and chunk text for auditability.
-- Provider failures should degrade to clear errors rather than uncited answers.
+Key tradeoffs:
 
-## Security Considerations
-
-- No secrets are committed; use `.env` locally and managed secrets in CI or hosting.
-- Uploaded documents should be scanned and size-limited before processing.
-- Future auth should enforce corpus-level access control before retrieval.
-- Logs should avoid storing full prompts or sensitive document content by default.
+- The deterministic embedding provider makes tests reliable, but production use needs a real embedding adapter.
+- JSON-stored vectors and Python cosine scoring keep local tests simple; PostgreSQL/pgvector indexes are the intended path for larger corpora.
+- Database-backed worker leases are easy to reason about in a portfolio project; a production queue would likely move retries, backoff, and dead-letter handling into Redis, Azure Service Bus, SQS, or a managed workflow system.
+- Retrieval currently returns citation evidence only. LLM synthesis should be added behind strict citation and fallback rules.
 
 ## Future Improvements
 
-- Database migrations with Alembic
-- Real embedding provider adapter behind the existing provider interface
-- Redis-backed worker queue, exponential backoff, and dead-letter handling
-- LLM answer synthesis over retrieved citations
-- RAG evaluation runner and sample benchmark set
-- Frontend document browser and query UI
-- OpenTelemetry exporter configuration
-- Integration tests against PostgreSQL and Redis
+- Add a real embedding provider adapter behind the existing provider interface.
+- Add citation-constrained LLM answer synthesis.
+- Add a small RAG evaluation runner and benchmark fixture set.
+- Add integration tests against PostgreSQL/pgvector and Redis service containers.
+- Add a lightweight web UI for document browsing and query inspection.
+- Add OpenTelemetry exporter configuration for hosted environments.
