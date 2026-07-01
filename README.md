@@ -35,7 +35,7 @@ flowchart LR
 - Document ingestion persistence with idempotent content hashing
 - SQLAlchemy models and Alembic migrations for documents, chunks, and embedding jobs
 - Deterministic local embedding provider for offline development and tests
-- CLI embedding job processor with retry, failure, and idempotent rerun behavior
+- CLI embedding job processor with leases, retry, failure, and idempotent rerun behavior
 - Retrieval and answer response contracts
 - Docker Compose for PostgreSQL/pgvector and Redis
 - GitHub Actions CI for linting and tests
@@ -141,10 +141,10 @@ Document ingestion creates pending embedding jobs for each persisted chunk. The 
 Process a bounded batch of pending jobs:
 
 ```bash
-python -m app.jobs.process_embeddings --limit 10
+python -m app.jobs.process_embeddings --limit 10 --worker-id local-worker
 ```
 
-The worker stores vectors on `document_chunks.embedding`, marks successful jobs `completed`, records provider errors on failed attempts, and marks jobs `failed` once `--max-attempts` is reached. Completed jobs are skipped on reruns, and failed jobs can be reset by worker code for an explicit retry path.
+The worker claims pending jobs by marking them `in_progress` with `locked_at` and `locked_by`, stores vectors on `document_chunks.embedding`, marks successful jobs `completed`, records provider errors on failed attempts, and marks jobs `failed` once `--max-attempts` is reached. Fresh in-progress jobs are left alone, stale leases are recovered after `--lease-timeout-seconds`, completed jobs are skipped on reruns, and failed jobs can be reset by worker code for an explicit retry path.
 
 ## Testing
 
@@ -164,6 +164,7 @@ ruff check .
 ## Reliability Considerations
 
 - Ingestion should be idempotent by document checksum and source ID.
+- Embedding jobs use worker leases to avoid duplicate processing and recover stale in-progress claims.
 - Failed embedding jobs track attempts and terminal failure state; future queue backends should add exponential backoff.
 - Query responses should include citation metadata for auditability.
 - Provider failures should degrade to clear errors rather than uncited answers.
@@ -179,7 +180,7 @@ ruff check .
 
 - Database migrations with Alembic
 - Real embedding provider adapter behind the existing provider interface
-- Redis-backed worker queue and dead-letter handling
+- Redis-backed worker queue, exponential backoff, and dead-letter handling
 - RAG evaluation runner and sample benchmark set
 - Frontend document browser and query UI
 - OpenTelemetry exporter configuration

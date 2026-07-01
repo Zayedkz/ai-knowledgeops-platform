@@ -1,4 +1,5 @@
 import argparse
+from datetime import timedelta
 
 from app.core.config import get_settings
 from app.db.session import SessionLocal
@@ -15,11 +16,27 @@ def main() -> None:
         default=3,
         help="Attempts before a job is marked failed.",
     )
+    parser.add_argument(
+        "--lease-timeout-seconds",
+        type=int,
+        default=900,
+        help="Recover in-progress jobs whose leases are older than this timeout.",
+    )
+    parser.add_argument(
+        "--worker-id",
+        default=None,
+        help="Optional worker identifier recorded while jobs are leased.",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
     provider = get_embedding_provider(settings.embedding_provider)
-    processor = EmbeddingJobProcessor(provider=provider, max_attempts=args.max_attempts)
+    processor = EmbeddingJobProcessor(
+        provider=provider,
+        max_attempts=args.max_attempts,
+        lease_timeout=timedelta(seconds=args.lease_timeout_seconds),
+        worker_id=args.worker_id,
+    )
 
     with SessionLocal() as session:
         result = processor.process_pending(session=session, limit=args.limit)
