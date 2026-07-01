@@ -51,7 +51,7 @@ Initial endpoints:
 
 - `GET /health`: service health and environment.
 - `POST /documents`: ingest document text, persist chunks, and enqueue embedding jobs.
-- `POST /query`: accepts a question and optional metadata filter, returns answer and citations.
+- `POST /query`: embeds a question, applies optional metadata filters, retrieves matching chunks, and returns answer text plus citations.
 
 Planned endpoints:
 
@@ -63,6 +63,7 @@ Planned endpoints:
 - Horizontally scale stateless API containers.
 - Scale workers independently based on queue depth.
 - Use pgvector indexes for retrieval once chunk volume grows.
+- Keep the local retriever deterministic with Python cosine scoring until Postgres integration tests are available.
 - Add Redis caching for repeated questions and stable corpora.
 - Use object storage for large original documents.
 
@@ -81,6 +82,7 @@ Planned endpoints:
 - Claim embedding jobs with short worker leases and recover stale `in_progress` jobs.
 - Return explicit errors when citations cannot be produced.
 - Avoid generating unsupported answers when retrieval confidence is low.
+- Keep answer synthesis disabled until an LLM provider can ground responses in retrieved citations.
 - Make ingestion idempotent with `(source, content_hash)` uniqueness.
 
 ## 9. Observability
@@ -102,12 +104,14 @@ Planned endpoints:
 - PostgreSQL with pgvector keeps the local system simple and portfolio-friendly, but a dedicated vector database may be useful at very high scale.
 - Mock providers make testing reliable without paid APIs, but production value requires real provider adapters.
 - The first worker uses database-backed leases, which is simple and testable; a production queue should move backoff and dead-letter handling into Redis or a managed queue.
+- The first retriever scores JSON vectors in application code for deterministic SQLite tests; pgvector should replace this for larger corpora.
 - Docker Compose is enough for local development, while production should use managed database, cache, and secret services.
 
 ## 12. Future Improvements
 
 - Real embeddings and model adapters.
 - Redis-backed embedding queue with exponential backoff and dead-letter handling.
+- LLM answer generation constrained to retrieved citations.
 - RAG quality evaluation script.
 - Document upload workflow.
 - Web UI.

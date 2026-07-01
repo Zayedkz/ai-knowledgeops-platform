@@ -7,4 +7,5 @@ class Citation(BaseModel):
     title: str
     source: str
     score: float
-
+    text: str
+    metadata: dict[str, str]

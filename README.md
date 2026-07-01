@@ -36,7 +36,7 @@ flowchart LR
 - SQLAlchemy models and Alembic migrations for documents, chunks, and embedding jobs
 - Deterministic local embedding provider for offline development and tests
 - CLI embedding job processor with leases, retry, failure, and idempotent rerun behavior
-- Retrieval and answer response contracts
+- Deterministic embedding retrieval with metadata filtering and citations
 - Docker Compose for PostgreSQL/pgvector and Redis
 - GitHub Actions CI for linting and tests
 - System design documentation with scaling, reliability, and security notes
@@ -110,7 +110,7 @@ curl http://localhost:8000/health
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
-  -d '{"question":"What does this platform do?","metadata_filter":{"source":"sample"}}'
+  -d '{"question":"What does this platform do?","metadata_filter":{"team":"ai-platform"},"limit":5}'
 ```
 
 ```bash
@@ -146,6 +146,12 @@ python -m app.jobs.process_embeddings --limit 10 --worker-id local-worker
 
 The worker claims pending jobs by marking them `in_progress` with `locked_at` and `locked_by`, stores vectors on `document_chunks.embedding`, marks successful jobs `completed`, records provider errors on failed attempts, and marks jobs `failed` once `--max-attempts` is reached. Fresh in-progress jobs are left alone, stale leases are recovered after `--lease-timeout-seconds`, completed jobs are skipped on reruns, and failed jobs can be reset by worker code for an explicit retry path.
 
+## Query Retrieval
+
+`POST /query` embeds the question with the configured embedding provider, scores stored chunk embeddings with cosine similarity, applies optional exact-match metadata filters, and returns the highest-scoring citations. The current response is intentionally retrieval-only: LLM answer synthesis is not connected yet, so the answer text directs callers to the returned citation evidence instead of inventing unsupported prose.
+
+The retriever runs in Python over JSON-stored vectors so SQLite tests and offline development remain deterministic. PostgreSQL/pgvector nearest-neighbor indexes are the planned production path once local Docker-based integration tests are available.
+
 ## Testing
 
 ```bash
@@ -166,7 +172,7 @@ ruff check .
 - Ingestion should be idempotent by document checksum and source ID.
 - Embedding jobs use worker leases to avoid duplicate processing and recover stale in-progress claims.
 - Failed embedding jobs track attempts and terminal failure state; future queue backends should add exponential backoff.
-- Query responses should include citation metadata for auditability.
+- Query responses include citation metadata and chunk text for auditability.
 - Provider failures should degrade to clear errors rather than uncited answers.
 
 ## Security Considerations
@@ -181,6 +187,7 @@ ruff check .
 - Database migrations with Alembic
 - Real embedding provider adapter behind the existing provider interface
 - Redis-backed worker queue, exponential backoff, and dead-letter handling
+- LLM answer synthesis over retrieved citations
 - RAG evaluation runner and sample benchmark set
 - Frontend document browser and query UI
 - OpenTelemetry exporter configuration

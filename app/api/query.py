@@ -1,14 +1,21 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
+from app.db.session import get_db_session
+from app.embeddings import get_embedding_provider
 from app.retrieval.models import Citation
+from app.retrieval.service import EmbeddingRetriever
 
 router = APIRouter(tags=["query"])
+DbSession = Depends(get_db_session)
 
 
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1)
     metadata_filter: dict[str, str] | None = None
+    limit: int = Field(default=5, ge=1, le=20)
 
 
 class QueryResponse(BaseModel):
@@ -17,10 +24,21 @@ class QueryResponse(BaseModel):
 
 
 @router.post("/query", response_model=QueryResponse)
-def query(request: QueryRequest) -> QueryResponse:
-    answer = (
-        "Retrieval and generation providers are not connected yet. "
-        "This scaffold returns the contract that future RAG responses will follow."
+def query(request: QueryRequest, session: Session = DbSession) -> QueryResponse:
+    provider = get_embedding_provider(get_settings().embedding_provider)
+    result = EmbeddingRetriever(provider=provider).retrieve(
+        session=session,
+        question=request.question,
+        metadata_filter=request.metadata_filter,
+        limit=request.limit,
     )
-    return QueryResponse(answer=answer, citations=[])
 
+    if not result.citations:
+        answer = "No embedded document chunks matched the query and metadata filter."
+        return QueryResponse(answer=answer, citations=[])
+
+    answer = (
+        "Retrieved relevant document chunks. LLM answer generation is not connected yet, "
+        "so use the returned citations as the grounded evidence."
+    )
+    return QueryResponse(answer=answer, citations=result.citations)
