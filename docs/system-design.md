@@ -43,7 +43,7 @@ Initial entities:
 - `documents`: source ID, title, content hash, metadata, timestamps.
 - `document_chunks`: document ID, chunk index, text, token estimate, metadata, embedding.
 - `embedding_jobs`: document ID, chunk ID, status, attempt count, last error, lease owner, lease timestamp, timestamps.
-- `query_events`: question, retrieval parameters, latency, selected chunk IDs, timestamps.
+- `query_events`: question, metadata filter, selected chunk IDs, citation scores, latency, timestamps.
 
 ## 5. API Design
 
@@ -89,6 +89,7 @@ Planned endpoints:
 
 - Structured JSON logs.
 - Request IDs propagated through API and worker flows.
+- Query events persisted for each `/query` request, including empty-result searches, selected chunk IDs, scores, and latency.
 - Metrics for ingestion latency, queue depth, retrieval latency, and provider latency.
 - Tracing hooks for API, database, Redis, and provider calls.
 

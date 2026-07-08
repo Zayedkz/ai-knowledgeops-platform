@@ -1,8 +1,11 @@
+from time import perf_counter
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.db.models import QueryEvent
 from app.db.session import get_db_session
 from app.embeddings import get_embedding_provider
 from app.retrieval.models import Citation
@@ -26,12 +29,28 @@ class QueryResponse(BaseModel):
 @router.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest, session: Session = DbSession) -> QueryResponse:
     provider = get_embedding_provider(get_settings().embedding_provider)
+    started_at = perf_counter()
     result = EmbeddingRetriever(provider=provider).retrieve(
         session=session,
         question=request.question,
         metadata_filter=request.metadata_filter,
         limit=request.limit,
     )
+    latency_ms = max(0, round((perf_counter() - started_at) * 1000))
+
+    session.add(
+        QueryEvent(
+            question=request.question,
+            metadata_filter=request.metadata_filter,
+            selected_chunk_ids=[citation.chunk_id for citation in result.citations],
+            citation_scores=[
+                {"chunk_id": citation.chunk_id, "score": citation.score}
+                for citation in result.citations
+            ],
+            latency_ms=latency_ms,
+        )
+    )
+    session.commit()
 
     if not result.citations:
         answer = "No embedded document chunks matched the query and metadata filter."
