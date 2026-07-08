@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import EmbeddingJobRecord
+from app.db.models import EmbeddingJobRecord, QueryEvent
 from app.embeddings import LocalHashEmbeddingProvider
 from app.ingestion.service import DocumentIngestionService, IngestDocumentCommand
 from app.jobs.embedding_processor import EmbeddingJobProcessor
@@ -11,6 +11,7 @@ from app.main import app
 
 def test_query_endpoint_returns_empty_citations_when_no_embeddings(
     app_with_test_db: None,
+    db_session: Session,
 ) -> None:
     response = TestClient(app).post("/query", json={"question": "What is this platform?"})
 
@@ -18,6 +19,14 @@ def test_query_endpoint_returns_empty_citations_when_no_embeddings(
     body = response.json()
     assert body["answer"] == "No embedded document chunks matched the query and metadata filter."
     assert body["citations"] == []
+
+    event = db_session.scalar(select(QueryEvent))
+    assert event is not None
+    assert event.question == "What is this platform?"
+    assert event.metadata_filter is None
+    assert event.selected_chunk_ids == []
+    assert event.citation_scores == []
+    assert event.latency_ms >= 0
 
 
 def test_query_endpoint_returns_retrieved_citations(
@@ -54,6 +63,16 @@ def test_query_endpoint_returns_retrieved_citations(
         == "AI KnowledgeOps indexes internal documents for retrieval and citations."
     )
     assert isinstance(citation["score"], float)
+
+    event = db_session.scalar(select(QueryEvent))
+    assert event is not None
+    assert event.question == "How does KnowledgeOps support retrieval?"
+    assert event.metadata_filter == {"team": "ai-platform"}
+    assert event.selected_chunk_ids == [citation["chunk_id"]]
+    assert event.citation_scores == [
+        {"chunk_id": citation["chunk_id"], "score": citation["score"]}
+    ]
+    assert event.latency_ms >= 0
 
 
 def test_query_endpoint_applies_metadata_filter(

@@ -81,3 +81,15 @@ class EmbeddingJobRecord(Base):
 
     document: Mapped[Document] = relationship(back_populates="embedding_jobs")
     chunk: Mapped[DocumentChunk] = relationship(back_populates="embedding_job")
+
+
+class QueryEvent(Base):
+    __tablename__ = "query_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    question: Mapped[str] = mapped_column(Text)
+    metadata_filter: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
+    selected_chunk_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    citation_scores: Mapped[list[dict[str, float | str]]] = mapped_column(JSON, default=list)
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

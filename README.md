@@ -47,6 +47,7 @@ The local/test path uses deterministic embeddings and SQLite-compatible JSON vec
 - Worker lease recovery for stale `in_progress` jobs.
 - Deterministic embedding provider for reliable local tests and CI.
 - Metadata-filtered retrieval with citation objects instead of unsupported generated prose.
+- Query-event persistence for retrieval observability and later offline evaluation.
 - Focused pytest coverage for ingestion, chunking, worker behavior, retrieval, and API contracts.
 - GitHub Actions workflow for automated quality checks.
 
@@ -55,6 +56,7 @@ The local/test path uses deterministic embeddings and SQLite-compatible JSON vec
 - `POST /documents` ingests text, persists chunks, and creates embedding jobs.
 - `python -m app.jobs.process_embeddings` processes a bounded batch of pending jobs.
 - `POST /query` embeds a question, applies optional exact-match metadata filters, scores chunks, and returns citations.
+- Each `/query` request records the question, metadata filter, selected chunk IDs, citation scores, and retrieval latency.
 - `GET /health` exposes basic service health and environment information.
 - Docker Compose provides PostgreSQL/pgvector and Redis for local infrastructure.
 - Structured project documentation captures scaling, reliability, security, and tradeoffs.
